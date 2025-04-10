@@ -34,10 +34,10 @@ fn main() -> io::Result<()> {
             continue;
         }
         let arg1 = args.get(0).unwrap();
-    
+        let mut response = String::new();
         match arg1.trim() {
             "1" => {
-                stream1 = send_request(stream1, input).unwrap();
+                (stream1, response) = send_request(stream1, input).unwrap();
             },
             "2" => {
                 if args.len() < 2 {
@@ -50,7 +50,7 @@ fn main() -> io::Result<()> {
                     .parse::<i32>();
                 match time {
                     Ok(_) => {
-                        stream1 = send_request(stream1, input).unwrap();
+                        (stream1, response) = send_request(stream1, input).unwrap();
                     },
                     Err(_) => {
                         println!("Аргумент должен быть числом!!!");
@@ -58,8 +58,12 @@ fn main() -> io::Result<()> {
                     },
                 }
             }
-            "3" | "4" => {
-                stream2 = send_request(stream2, input).expect("Ошибка записи в сокет")
+            "3" => {
+                (stream2, response) = send_request(stream2, input).expect("Ошибка записи в сокет");
+                println!("{}")
+            }, 
+            "4" => {
+
             }
             _ => {
                 
@@ -78,7 +82,7 @@ fn main() -> io::Result<()> {
 }
 
 
-fn send_request(mut stream: TcpStream, request: String) -> io::Result<TcpStream> {
+fn send_request(mut stream: TcpStream, request: String) -> io::Result<(TcpStream, String)> {
     stream.write_all(request.as_bytes()).expect("");
 
     let mut buffer = [0; 1024];
@@ -86,9 +90,9 @@ fn send_request(mut stream: TcpStream, request: String) -> io::Result<TcpStream>
     let response = String::from_utf8_lossy(&buffer[..bytes_read]);
 
     println!("\n\n");
-    println!("Server response: {}", response);
+    // println!("Server response: {}", response);
     println!("\n\n");
 
-    return Result::Ok(stream);
+    return io::Result::Ok((stream, response.into_owned()));
 
 }
