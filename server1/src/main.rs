@@ -3,12 +3,26 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 use server1::ThreadPool;
+#[cfg(target_os = "windows")]
 use windows::{
     core::Result,
     Win32::{Graphics::Dxgi::*, System::Console::GetConsoleWindow, UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW}}
 };
+use std::process::Command;
 
-fn get_gpu_name_windows() -> Result<Option<String>> {
+#[cfg(target_os = "linux")]
+fn get_gnu_name() -> Result<Option<String>> {
+    let output = Command::new("lspci").arg("-nn").arg("|").arg("grep").arg("-i").arg("vga\\|3d\\|display").output().map_err(|e| e.to_string()).expect("Ошибка получеия GPU");
+
+    let gpu_info = String::from_utf8(output.stdout).map_err(|e| e.to_string()).expect("Ошибка получеия GPU");
+
+    return gpu_info.trim().to_string();
+    //let gpu_str = String::from("gpu name");
+    //return Result::OK(Option::Some(gpu_str));
+}
+
+#[cfg(target_os = "windows")]
+fn get_gpu_name() -> Result<Option<String>> {
     unsafe {
         // Создаём фабрику DXGI
         let factory: IDXGIFactory1 = CreateDXGIFactory1()?;
@@ -35,7 +49,21 @@ fn get_gpu_name_windows() -> Result<Option<String>> {
     }
 }
 
-fn hide_console_window(time: i32) {
+#[cfg(target_os = "linux")]
+fn hide_console(time: i32) {
+    let conn = Connection::new_session().expect("Ошибка сворачиваия ока");
+    
+    let prox = conn.with_proxy(
+        "org.gnome.Shell",
+        "/org/gnome/Shell",
+        Duration::from_secs(2),
+    );   
+
+    let _: () = proxy.method_call("org.gnome.Shell", "MinimizeWindows", ()).expect("Ошибка сворачиваия ока");
+}
+
+#[cfg(target_os = "windows")]
+fn hide_console(time: i32) {
     unsafe {
         let hwnd = GetConsoleWindow();
         if !hwnd.is_invalid() {
@@ -86,7 +114,7 @@ fn handle_connection(mut stream: TcpStream) {
         // обработка запроса, получеие калла что адо отправить
         match arg1.trim() {
             "1" => {
-                let gpu_name = get_gpu_name_windows().expect("Ошибка получения GPU").expect("Gpu не найден");
+                let gpu_name = get_gpu_name().expect("Ошибка получения GPU").expect("Gpu не найден");
                 print!("{}", gpu_name);
                 stream.write_all(gpu_name.as_bytes()).expect("ошибка записи в сокет");
             },
@@ -99,7 +127,7 @@ fn handle_connection(mut stream: TcpStream) {
                         // Проверка на число второго аргумента
                         match time_int {
                             Ok(time) => {
-                                hide_console_window(time);
+                                hide_console(time);
                                 stream.write_all(b"1111").unwrap();
                             },
                             Err(_) => {
