@@ -3,26 +3,30 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 use server1::ThreadPool;
+use std::process::Command;
 #[cfg(target_os = "windows")]
 use windows::{
     core::Result,
     Win32::{Graphics::Dxgi::*, System::Console::GetConsoleWindow, UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW}}
 };
-use std::process::Command;
 
 // Константы
 const REPEAT_FLAG: &str = "-r";
 
 // Функции под платформу
 #[cfg(target_os = "linux")]
-fn get_gnu_name() -> Result<Option<String>> {
-    let output = Command::new("lspci").arg("-nn").arg("|").arg("grep").arg("-i").arg("vga\\|3d\\|display").output().map_err(|e| e.to_string()).expect("Ошибка получеия GPU");
+fn get_gpu_name() -> Result<Option<String>, ()> {
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg("lshw -C video | grep прод")
+        .output()
+        .map_err(|e| e.to_string())
+        .expect("Ошибка получеия GPU");
 
     let gpu_info = String::from_utf8(output.stdout).map_err(|e| e.to_string()).expect("Ошибка получеия GPU");
-
-    return gpu_info.trim().to_string();
-    //let gpu_str = String::from("gpu name");
-    //return Result::OK(Option::Some(gpu_str));
+    println!("{}", gpu_info);
+    let res = Result::Ok(Option::Some(gpu_info.trim().to_string()));
+    return res;
 }
 
 #[cfg(target_os = "windows")]
@@ -60,7 +64,7 @@ fn hide_console(time: i32) {
     let prox = conn.with_proxy(
         "org.gnome.Shell",
         "/org/gnome/Shell",
-        Duration::from_secs(2),
+        time::Duration::from_secs(2),
     );   
 
     let _: () = proxy.method_call("org.gnome.Shell", "MinimizeWindows", ()).expect("Ошибка сворачиваия ока");
