@@ -10,6 +10,10 @@ use windows::{
 };
 use std::process::Command;
 
+// Константы
+const REPEAT_FLAG: &str = "-r";
+
+// Функции под платформу
 #[cfg(target_os = "linux")]
 fn get_gnu_name() -> Result<Option<String>> {
     let output = Command::new("lspci").arg("-nn").arg("|").arg("grep").arg("-i").arg("vga\\|3d\\|display").output().map_err(|e| e.to_string()).expect("Ошибка получеия GPU");
@@ -97,9 +101,21 @@ fn main() {
 
 fn handle_connection(mut stream: TcpStream) {
 
+    let mut gpu_name_cache =  String::new();
+
     loop {
         let mut buffer = [0; 1024];
-        let bytes_read = stream.read(&mut buffer).unwrap(); // Читаем сырые байты
+        let bytes_read_res = stream.read(&mut buffer);
+        let bytes_read ;
+        match bytes_read_res {
+            Ok(bytes) => {
+                bytes_read = bytes;
+            },
+            Err(_) => {
+                break;
+            },
+        };
+
         let req: String = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
         println!("Received: {}", req);
     
@@ -109,14 +125,28 @@ fn handle_connection(mut stream: TcpStream) {
             stream.write_all(b"invalid request").unwrap();
             continue;
         }
+
+        // Ищем флаги
+        let repeat_flag_index = req_args.iter().position(|&x| x == REPEAT_FLAG);
+
         let arg1 = req_args.get(0).unwrap();
     
         // обработка запроса, получеие калла что адо отправить
         match arg1.trim() {
             "1" => {
-                let gpu_name = get_gpu_name().expect("Ошибка получения GPU").expect("Gpu не найден");
-                print!("{}", gpu_name);
-                stream.write_all(gpu_name.as_bytes()).expect("ошибка записи в сокет");
+                if repeat_flag_index.is_some() && gpu_name_cache.as_str() != "" {
+                    let gpu_name = get_gpu_name().expect("Ошибка получения GPU").expect("Gpu не найден");
+                    if gpu_name != gpu_name_cache {
+                        gpu_name_cache = gpu_name.clone();
+                        print!("{}", gpu_name);   
+                        stream.write_all(gpu_name.as_bytes()).expect("ошибка записи в сокет");
+                    }
+                } else {
+                    let gpu_name = get_gpu_name().expect("Ошибка получения GPU").expect("Gpu не найден");
+                    gpu_name_cache = gpu_name.clone();
+                    print!("{}", gpu_name);
+                    stream.write_all(gpu_name.as_bytes()).expect("ошибка записи в сокет");
+                }
             },
             "2" => {
                 let time = req_args.get(1);
@@ -147,9 +177,5 @@ fn handle_connection(mut stream: TcpStream) {
                 stream.write_all(b"sosat").unwrap();
             }
         }
-
-
-    
-        
     }    
 }
