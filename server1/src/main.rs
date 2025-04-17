@@ -3,9 +3,13 @@ use std::{
     net::{TcpListener, TcpStream},
 };
 use server1::ThreadPool;
+#[cfg(target_os = "linux")]
 use std::process::Command;
+#[cfg(target_os = "linux")]
 use x11::xlib;
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
+#[cfg(target_os = "linux")]
 use std::ptr;
 #[cfg(target_os = "windows")]
 use windows::{

@@ -1,7 +1,7 @@
 use core::time;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
-use std::{thread, sync::*};
+use std::{env, sync::*, thread};
 
 
 #[warn(dead_code)]
@@ -12,11 +12,14 @@ enum Reuqest {
 
 
 fn main() -> io::Result<()> {
+
+    let server1_addr = env::var("SERVER1_ADDRESS").unwrap_or_else(|_| "127.0.0.1:7878".to_string());
+    let server2_addr = env::var("SERVER2_ADDRESS").unwrap_or_else(|_| "127.0.0.1:7979".to_string());
     // Подключаемся к серверу
     let mut is_stream1 = false;
     let mut is_stream2 = false;
-    let mut stream1 = TcpStream::connect("127.0.0.1:7878");
-    let mut stream2 = TcpStream::connect("127.0.0.1:7979");
+    let mut stream1 = TcpStream::connect(server1_addr);
+    let mut stream2 = TcpStream::connect(server2_addr);
     if stream1.is_ok() {
         is_stream1 = true;
     }
