@@ -8,6 +8,8 @@ edition = "2024"
 
 [target. 'cfg(windows)'.dependencies]
 windows = { version = "0.61.1", features = ["Win32_Graphics_Dxgi", "Win32_Foundation", "Win32_System_Console", "Win32_UI_WindowsAndMessaging"] }
+winapi = { version = "0.3.9", features = ["namedpipeapi", "winbase"] }
+
 
 [target. 'cfg(unix)'.dependencies]
 x11 = { version = "2.21", features = ["xlib"] }

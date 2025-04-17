@@ -1,6 +1,8 @@
+use core::time;
 use std::{
     io::prelude::*,
-    net::{TcpListener, TcpStream},
+    fs::File,
+    net::{TcpListener, TcpStream}, thread,
 };
 use server1::ThreadPool;
 #[cfg(target_os = "linux")]
@@ -16,6 +18,10 @@ use windows::{
     core::Result,
     Win32::{Graphics::Dxgi::*, System::Console::GetConsoleWindow, UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW}}
 };
+use std::fs::OpenOptions;
+use std::os::windows::fs::OpenOptionsExt;
+use std::os::windows::io::OwnedHandle;
+use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
 // Константы
 const REPEAT_FLAG: &str = "-r";
@@ -103,6 +109,9 @@ enum Reuqest {
 }
 
 fn main() {
+
+    let log_pipe = connect_log_server();
+
     let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
     let pool = ThreadPool::new(4);
 
@@ -197,4 +206,30 @@ fn handle_connection(mut stream: TcpStream) {
             }
         }
     }    
+}
+
+
+fn connect_log_server() -> File {
+    let mut pipe: File;
+    loop {
+        let pipe_name = r"\\.\pipe\my_rust_pipe";
+        let pipe_res = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(FILE_FLAG_OVERLAPPED)
+            .open(pipe_name);
+        match pipe_res {
+            Ok(p) => {
+                pipe = p;
+                break; 
+            },
+            Err(_) => {},
+        }
+        println!("Ожидается включение лог сервера!");
+        thread::sleep(std::time::Duration::from_millis(1000));
+        
+    }
+    pipe.write_all(b"Request").unwrap();
+    println!("Соединение с лог сервером установлено!");
+    return pipe;
 }
