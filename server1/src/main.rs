@@ -4,6 +4,9 @@ use std::{
 };
 use server1::ThreadPool;
 use std::process::Command;
+use x11::xlib;
+use std::ffi::CString;
+use std::ptr;
 #[cfg(target_os = "windows")]
 use windows::{
     core::Result,
@@ -59,15 +62,23 @@ fn get_gpu_name() -> Result<Option<String>> {
 
 #[cfg(target_os = "linux")]
 fn hide_console(time: i32) {
-    let conn = Connection::new_session().expect("Ошибка сворачиваия ока");
-    
-    let prox = conn.with_proxy(
-        "org.gnome.Shell",
-        "/org/gnome/Shell",
-        time::Duration::from_secs(2),
-    );   
+    unsafe {
+        let display = xlib::XOpenDisplay(ptr::null());
+        if display.is_null() {
+            eprintln!("Не удалось подключиться к X11");
+            return;
+        }
 
-    let _: () = proxy.method_call("org.gnome.Shell", "MinimizeWindows", ()).expect("Ошибка сворачиваия ока");
+        // Получаем Window ID текущего терминала
+        let window_name = CString::new("").unwrap();
+        let window = xlib::XDefaultRootWindow(display);
+        let mut focus: xlib::Window = 0;
+        xlib::XGetInputFocus(display, &mut focus, ptr::null_mut());
+
+        // Сворачиваем окно терминала
+        xlib::XIconifyWindow(display, focus, 0);
+        xlib::XCloseDisplay(display);
+    }
 }
 
 #[cfg(target_os = "windows")]
