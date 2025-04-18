@@ -4,12 +4,6 @@ use std::net::TcpStream;
 use std::{env, sync::*, thread};
 
 
-#[warn(dead_code)]
-enum Reuqest {
-    PhysMemory,
-    VirtualMemory
-}
-
 
 fn main() -> io::Result<()> {
 
@@ -18,8 +12,8 @@ fn main() -> io::Result<()> {
     // Подключаемся к серверу
     let mut is_stream1 = false;
     let mut is_stream2 = false;
-    let mut stream1 = TcpStream::connect(server1_addr);
-    let mut stream2 = TcpStream::connect(server2_addr);
+    let mut stream1 = TcpStream::connect(server1_addr.clone());
+    let mut stream2 = TcpStream::connect(server2_addr.clone());
     if stream1.is_ok() {
         is_stream1 = true;
     }
@@ -39,6 +33,12 @@ fn main() -> io::Result<()> {
         if is_stream2 {
             print!("3 - процент используемой физической памяти\n");
             print!("4 - процент используемой виртуальной памяти\n");
+        }
+        if !is_stream1 || !is_stream2 {
+            print!("connect (1-2) - подключиться к серверу\n")
+        }
+        if is_stream1 || is_stream2 {
+            print!("disconnect (1-2) - отключиться от сервера\n")
         }
         print!("q - выход\n");
     
@@ -79,7 +79,7 @@ fn main() -> io::Result<()> {
                         stream1 = repeat_request(stream1, input, repeat_time, String::from("Видеоадаптер: "));
                     } else {
                         (stream1, response) = send_request(stream1, &input).unwrap();
-                        println!("Видеоадаптер: {}", response);
+                        println!("{}", response);
                     }
                 }
             },
@@ -118,7 +118,7 @@ fn main() -> io::Result<()> {
                             String::from("Процент используемой физической памяти: "));
                     } else {
                         (stream2, response) = send_request(stream2, &input).expect("Ошибка записи в сокет");
-                        println!("Процент используемой физической памяти: {}", response);
+                        println!("{}", response);
                     }
                 }
             }, 
@@ -132,7 +132,77 @@ fn main() -> io::Result<()> {
                     } else {
                         (stream2, response) = send_request(stream2, &input)
                         .expect("Ошибка записи в сокет");
-                        println!("Процент используемой виртуальной памяти: {}", response)
+                        println!("{}", response)
+                    }
+                }
+            },
+            "connect" => {
+                if args.len() < 2 {
+                    println!("Недостаточно аргументов");
+                    continue;
+                }
+                let server_num_res = args
+                .get(1)
+                .unwrap().trim()
+                .parse::<i32>();
+                let server_num: i32 = match server_num_res {
+                    Ok(num) => num,
+                    Err(_) => {
+                        print!("Аргумент должен быть числом");
+                        continue;
+                    },
+                };
+
+                match server_num {
+                    1 => {
+                        stream1 = TcpStream::connect(server1_addr.clone());
+                        if stream1.is_ok() {
+                            is_stream1 = true;
+                        } else {
+                            is_stream1 = false;
+                        }
+                    },
+                    2 => {
+                        stream2 = TcpStream::connect(server2_addr.clone());
+                        if stream2.is_ok() {
+                            is_stream2 = true;
+                        } else {
+                            is_stream2 = false;
+                        }
+                    },
+                    _ => {
+                        println!("Сервера с таким номером не существует");
+                        continue;
+                    }
+                }
+            },
+            "disconnect" => {
+                if args.len() < 2 {
+                    println!("Недостаточно аргументов");
+                    continue;
+                }
+                let server_num_res = args
+                .get(1)
+                .unwrap().trim()
+                .parse::<i32>();
+                let server_num: i32 = match server_num_res {
+                    Ok(num) => num,
+                    Err(_) => {
+                        print!("Аргумент должен быть числом");
+                        continue;
+                    },
+                };
+
+                match server_num {
+                    1 => {
+                        is_stream1 = false;
+                    },
+                    2 => {
+                        is_stream2 = false;
+                    },
+                    _ => {
+                        println!("Сервера с таким номером не существует");
+                        continue;
                     }
                 }
             },
@@ -140,15 +210,9 @@ fn main() -> io::Result<()> {
                 return Result::Ok(());
             },
             _ => {
-                
-                // stream = send_request(stream, String::from("sdasdasdasd")).unwrap();
+
             }
         }
-
-
-
-
-        // send_request(stream, input)?;
 
     }
 
@@ -158,7 +222,10 @@ fn main() -> io::Result<()> {
 
 fn send_request(stream_res: Result<TcpStream, io::Error>, request: &String) -> io::Result<(Result<TcpStream, io::Error>, String)> {
     let mut stream = stream_res.unwrap();
-    stream.write_all(request.as_bytes()).expect("");
+    let write_result = stream.write_all(request.as_bytes());
+    if write_result.is_err() {
+        print!("Сервер разорвал соединение");
+    }
 
     let mut buffer = [0; 1024];
     let bytes_read = stream.read(&mut buffer)?;
