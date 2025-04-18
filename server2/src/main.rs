@@ -1,9 +1,12 @@
 use std::{
+    fs::{File, OpenOptions},
     io::prelude::*,
     net::{TcpListener, TcpStream}, str::Bytes,
 };
 use server2::ThreadPool;
 use sysinfo::System;
+use std::os::windows::fs::OpenOptionsExt;
+use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
 const REPEAT_FLAG: &str = "-r";
 
@@ -74,19 +77,24 @@ fn get_virtual_mem() -> Result<f64, ()> {
 }
 
 fn main() {
+
+    let log_pipe = connect_log_server();
+
     let listener = TcpListener::bind("127.0.0.1:7979").unwrap();
     let pool = ThreadPool::new(4);
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
+        let cloned_pipe = log_pipe.try_clone().expect("Не удалось скопировать pipe");
+
         pool.execute(|| {
-            handle_connection(stream);
+            handle_connection(stream, cloned_pipe);
         });
     
     }
 }
 
-fn handle_connection(mut stream: TcpStream) {
+fn handle_connection(mut stream: TcpStream, mut pipe: File) {
 
     let mut phys_mem_str_cache = String::new();
     let mut virtual_mem_str_cache = String::new();
@@ -104,6 +112,8 @@ fn handle_connection(mut stream: TcpStream) {
             },
         };
         let req: String = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
+        let mut log_record = "Server 2 received: ".to_string() + req.as_str();
+        // write_log(&mut pipe, &log_record);
         println!("Received: {}", req);
     
         let req_args: Vec<&str> = req.split(" ").collect();
@@ -126,14 +136,22 @@ fn handle_connection(mut stream: TcpStream) {
                     if phys_mem_str != phys_mem_str_cache {
                         phys_mem_str_cache = phys_mem_str.clone();
                         stream.write_all(phys_mem_str.as_bytes()).expect("ошибка записи в сокет");
+                        log_record += "Server responded: ";
+                        log_record += phys_mem_str.as_str();
+                        write_log(&mut pipe,&log_record);
                     } else {
                         stream.write_all(b"null").expect("ошибка записи в сокет");
+                        log_record += "Server responded: null";
+                        write_log(&mut pipe,&log_record);
                     }
                 } else {
                     let phys_mem = get_phys_mem().expect("ошибка физической памяти");
                     let phys_mem_str: String = phys_mem.to_string().chars().take(5).collect();
                     phys_mem_str_cache = phys_mem_str.clone();
                     stream.write_all(phys_mem_str.as_bytes()).expect("ошибка записи в сокет");
+                    log_record += "Server responded: ";
+                    log_record += phys_mem_str.as_str();
+                    write_log(&mut pipe,&log_record);
                 }
             },
             "4" => {
@@ -143,14 +161,22 @@ fn handle_connection(mut stream: TcpStream) {
                     if virtual_mem_str != virtual_mem_str_cache {
                         virtual_mem_str_cache = virtual_mem_str.clone();
                         stream.write_all(virtual_mem_str.as_bytes()).expect("ошибка записи в сокет");
+                        log_record += "Server responded: ";
+                        log_record += virtual_mem_str.as_str();
+                        write_log(&mut pipe,&log_record);
                     } else {
                         stream.write_all(b"null").expect("ошибка записи в сокет");
+                        log_record += "Server responded: null";
+                        write_log(&mut pipe,&log_record);
                     }
                 } else {
                     let virtual_mem = get_virtual_mem().expect("ошибка виртуальной памяти");
                     let virtual_mem_str: String = virtual_mem.to_string().chars().take(5).collect();
                     virtual_mem_str_cache = virtual_mem_str.clone();
                     stream.write_all(virtual_mem_str.as_bytes()).unwrap();
+                    log_record += "Server responded: ";
+                    log_record += virtual_mem_str.as_str();
+                    write_log(&mut pipe,&log_record);
                 }
             },
             _ => {
@@ -162,4 +188,33 @@ fn handle_connection(mut stream: TcpStream) {
     
         
     }    
+}
+
+fn connect_log_server() -> File {
+    let mut pipe: File;
+    loop {
+        let pipe_name = r"\\.\pipe\log_server_2";
+        let pipe_res = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .custom_flags(FILE_FLAG_OVERLAPPED)
+            .open(pipe_name);
+        match pipe_res {
+            Ok(p) => {
+                pipe = p;
+                break; 
+            },
+            Err(_) => {},
+        }
+        println!("Ожидается включение лог сервера!");
+        std::thread::sleep(std::time::Duration::from_millis(1000));
+        
+    }
+    pipe.write_all(b"SERVER IS ON").unwrap();
+    println!("Соединение с лог сервером установлено!");
+    return pipe;
+}
+
+fn write_log(pipe: &mut File, data: &String) {
+    pipe.write_all(data.as_bytes()).expect("Не удалось записать лог");
 }

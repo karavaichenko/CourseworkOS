@@ -20,7 +20,6 @@ use windows::{
 };
 use std::fs::OpenOptions;
 use std::os::windows::fs::OpenOptionsExt;
-use std::os::windows::io::OwnedHandle;
 use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
 // Константы
@@ -117,17 +116,17 @@ fn main() {
 
     for stream in listener.incoming() {
         let stream = stream.unwrap();
-
+        let cloned_pipe = log_pipe.try_clone().expect("Не удалось скоировать pipe");
 
         pool.execute(|| {
-            handle_connection(stream);
+            handle_connection(stream, cloned_pipe);
         });
         
 
     }
 }
 
-fn handle_connection(mut stream: TcpStream) {
+fn handle_connection(mut stream: TcpStream, mut pipe: File) {
 
     let mut gpu_name_cache =  String::new();
 
@@ -145,6 +144,8 @@ fn handle_connection(mut stream: TcpStream) {
         };
 
         let req: String = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
+        let mut log_record = "Server 1 received: ".to_string() + req.as_str();
+        // write_log(&mut pipe, &log_record);
         println!("Received: {}", req);
     
         let req_args: Vec<&str> = req.split(" ").collect();
@@ -168,12 +169,18 @@ fn handle_connection(mut stream: TcpStream) {
                         gpu_name_cache = gpu_name.clone();
                         print!("{}", gpu_name);   
                         stream.write_all(gpu_name.as_bytes()).expect("ошибка записи в сокет");
+                        log_record += "\nServer responded: ";
+                        log_record += gpu_name.as_str();
+                        write_log(&mut pipe,&log_record);
                     }
                 } else {
                     let gpu_name = get_gpu_name().expect("Ошибка получения GPU").expect("Gpu не найден");
                     gpu_name_cache = gpu_name.clone();
                     print!("{}", gpu_name);
                     stream.write_all(gpu_name.as_bytes()).expect("ошибка записи в сокет");
+                    log_record += "Server responded: ";
+                    log_record += gpu_name.as_str();
+                    write_log(&mut pipe,&log_record);
                 }
             },
             "2" => {
@@ -186,23 +193,31 @@ fn handle_connection(mut stream: TcpStream) {
                         match time_int {
                             Ok(time) => {
                                 hide_console(time);
-                                stream.write_all(b"1111").unwrap();
+                                stream.write_all(b"success").unwrap();
+                                log_record += "Server responded: success";
+                                write_log(&mut pipe,&log_record);
                             },
                             Err(_) => {
                                 stream.write_all(b"invalid request").unwrap();
+                                log_record += "Server responded: invalid request";
+                                write_log(&mut pipe,&log_record);
                                 continue;
                             },
                         }
                     },
                     None => {
                         stream.write_all(b"invalid request").unwrap();
+                        log_record += "Server responded: invalid request";
+                        write_log(&mut pipe,&log_record);
                         continue;
                     },
                 }
             },
             _ => {
                 println!("{}", arg1);
-                stream.write_all(b"sosat").unwrap();
+                stream.write_all(b"not found").unwrap();
+                log_record += "Server responded: not found";
+                write_log(&mut pipe,&log_record);
             }
         }
     }    
@@ -212,7 +227,7 @@ fn handle_connection(mut stream: TcpStream) {
 fn connect_log_server() -> File {
     let mut pipe: File;
     loop {
-        let pipe_name = r"\\.\pipe\my_rust_pipe";
+        let pipe_name = r"\\.\pipe\log_server_1";
         let pipe_res = OpenOptions::new()
             .read(true)
             .write(true)
@@ -232,4 +247,8 @@ fn connect_log_server() -> File {
     pipe.write_all(b"Request").unwrap();
     println!("Соединение с лог сервером установлено!");
     return pipe;
+}
+
+fn write_log(pipe: &mut File, data: &String) {
+    pipe.write_all(data.as_bytes()).expect("Не удалось записать лог");
 }
