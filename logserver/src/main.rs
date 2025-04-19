@@ -22,7 +22,6 @@ fn main() -> std::io::Result<()> {
     let (pipe_stream1, _pipe1) = create_pipe("log_server_1").expect("Не удалось создать канал");
     
     // Файл логов и канал для второго сервера
-    fs::create_dir_all("logs_server2").expect("Невозможно создать папку");
     let log_file2 = OpenOptions::new()
         .create(true)    // Создаем если не существует
         .append(true)    // Добавляем в конец файла

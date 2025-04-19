@@ -196,9 +196,13 @@ fn main() -> io::Result<()> {
                 match server_num {
                     1 => {
                         is_stream1 = false;
+                        let err = io::Error::new(io::ErrorKind::ConnectionRefused, "");
+                        stream1 = Result::Err(err);
                     },
                     2 => {
                         is_stream2 = false;
+                        let err = io::Error::new(io::ErrorKind::ConnectionRefused, "");
+                        stream1 = Result::Err(err);
                     },
                     _ => {
                         println!("Сервера с таким номером не существует");
