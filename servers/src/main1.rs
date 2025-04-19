@@ -1,8 +1,8 @@
 use std::{
-    fs::File, io::{self, prelude::*}, net::{TcpListener, TcpStream}, thread
+    io::prelude::*, net::{TcpListener, TcpStream}
 };
 use chrono::Local;
-use server1::ThreadPool;
+use servers::{LogClient, ThreadPool};
 #[cfg(target_os = "linux")]
 use std::process::Command;
 #[cfg(target_os = "linux")]
@@ -16,9 +16,6 @@ use windows::{
     core::Result,
     Win32::{Graphics::Dxgi::*, System::Console::GetConsoleWindow, UI::WindowsAndMessaging::{ShowWindow, SW_HIDE, SW_SHOW}}
 };
-use std::fs::OpenOptions;
-use std::os::windows::fs::OpenOptionsExt;
-use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
 // Константы
 const REPEAT_FLAG: &str = "-r";
@@ -102,24 +99,38 @@ fn hide_console(time: i32) {
 
 fn main() {
 
-    let log_pipe = connect_log_server();
+    let mut log_client = LogClient::new("log_server_1".to_string());
 
-    let listener = TcpListener::bind("127.0.0.1:7878").unwrap();
-    let pool = ThreadPool::new(4);
-
+    let listener_res = TcpListener::bind("127.0.0.1:7878");
+    let listener: TcpListener;
+    match listener_res {
+        Ok(lis) => {
+            listener = lis;
+        },
+        Err(_) => {
+            println!("Кажется сервер уже запущен, порт занят!");
+            return;
+        },
+    }
+    
+    let pool = ThreadPool::new(10);
+    
+    let mut client_id = 0;
     for stream in listener.incoming() {
+        log_client.write_log(&format!("CONNECT {} CLIENT", client_id));
+        client_id += 1;
         let stream = stream.unwrap();
-        let cloned_pipe = log_pipe.try_clone().expect("Не удалось скоировать pipe");
+        let cloned_log_client = log_client.clone();
 
-        pool.execute(|| {
-            handle_connection(stream, cloned_pipe);
+        pool.execute(move || {
+            handle_connection(stream, cloned_log_client, client_id);
         });
         
 
     }
 }
 
-fn handle_connection(mut stream: TcpStream, mut pipe: File) {
+fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id: i32) {
 
     let mut gpu_name_cache =  String::new();
 
@@ -132,13 +143,13 @@ fn handle_connection(mut stream: TcpStream, mut pipe: File) {
                 bytes_read = bytes;
             },
             Err(_) => {
+                log_client.write_log(&format!("CLIENT {} DISCONNECT", client_id));
                 break;
             },
         };
 
         let req: String = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
-        let mut log_record = "Server 1 received: ".to_string() + req.as_str();
-        // write_log(&mut pipe, &log_record);
+        log_client.write_log(&format!("Server received from client {}: {}", client_id, req));
         println!("Received: {}", req);
     
         let req_args: Vec<&str> = req.split(" ").collect();
@@ -161,19 +172,15 @@ fn handle_connection(mut stream: TcpStream, mut pipe: File) {
                     if gpu_name != gpu_name_cache {
                         gpu_name_cache = gpu_name.clone();
                         print!("{}", gpu_name);   
-                        send_response(&mut stream, &gpu_name).expect("ошибка записи в сокет");
-                        log_record += "\nServer responded: ";
-                        log_record += gpu_name.as_str();
-                        write_log(&mut pipe,&log_record);
+                        send_response(&mut stream, &gpu_name);
+                        log_client.write_log(&format!("Server responded client {}: {}", client_id, gpu_name));
                     }
                 } else {
                     let gpu_name = get_gpu_name().expect("Ошибка получения GPU").expect("Gpu не найден");
                     gpu_name_cache = gpu_name.clone();
                     print!("{}", gpu_name);
-                    send_response(&mut stream, &gpu_name).expect("ошибка записи в сокет");
-                    log_record += "Server responded: ";
-                    log_record += gpu_name.as_str();
-                    write_log(&mut pipe,&log_record);
+                    send_response(&mut stream, &gpu_name);
+                    log_client.write_log(&format!("Server responded client {}: {}", client_id, gpu_name));
                 }
             },
             "2" => {
@@ -186,70 +193,33 @@ fn handle_connection(mut stream: TcpStream, mut pipe: File) {
                         match time_int {
                             Ok(time) => {
                                 hide_console(time);
-                                send_response(&mut stream, &"success".to_string()).unwrap();
-                                log_record += "Server responded: success";
-                                write_log(&mut pipe,&log_record);
+                                send_response(&mut stream, &"success".to_string());
+                                log_client.write_log(&format!("Server responded client {}: success", client_id));
                             },
                             Err(_) => {
-                                send_response(&mut stream, &"invalid request".to_string()).unwrap();
-                                log_record += "Server responded: invalid request";
-                                write_log(&mut pipe,&log_record);
+                                send_response(&mut stream, &"invalid request".to_string());
+                                log_client.write_log(&format!("Server responded client {}: invalid request", client_id));
                                 continue;
                             },
                         }
                     },
                     None => {
-                        send_response(&mut stream, &"invalid request".to_string()).unwrap();
-                        log_record += "Server responded: invalid request";
-                        write_log(&mut pipe,&log_record);
+                        send_response(&mut stream, &"invalid request".to_string());
+                        log_client.write_log(&format!("Server responded client {}: invalid request", client_id));
                         continue;
                     },
                 }
             },
             _ => {
                 println!("{}", arg1);
-                send_response(&mut stream, &"not found".to_string()).unwrap();
-                log_record += "Server responded: not found";
-                write_log(&mut pipe,&log_record);
+                send_response(&mut stream, &"not found".to_string());
+                log_client.write_log(&format!("Server responded client {}: not found", client_id));
             }
         }
     }    
 }
 
-
-fn connect_log_server() -> File {
-    let mut pipe: File;
-    loop {
-        let pipe_name = r"\\.\pipe\log_server_1";
-        let pipe_res = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .custom_flags(FILE_FLAG_OVERLAPPED)
-            .open(pipe_name);
-        match pipe_res {
-            Ok(p) => {
-                pipe = p;
-                break; 
-            },
-            Err(_) => {},
-        }
-        println!("Ожидается включение лог сервера!");
-        thread::sleep(std::time::Duration::from_millis(1000));
-        
-    }
-    pipe.write_all(b"Request").unwrap();
-    println!("Соединение с лог сервером установлено!");
-    return pipe;
-}
-
-fn write_log(pipe: &mut File, data: &String) {
-    pipe.write_all(data.as_bytes()).expect("Не удалось записать лог");
-}
-
-fn send_response(stream: &mut TcpStream, response: &String) -> io::Result<()> {
-
+fn send_response(stream: &mut TcpStream, response: &String) {
     let response_with_time = format!("{} {}", Local::now().format("%d.%m.%Y %T"), response);
-    stream.write_all(response_with_time.as_bytes())?;
-
-    Ok(())
+    let _write_res = stream.write_all(response_with_time.as_bytes());
 }

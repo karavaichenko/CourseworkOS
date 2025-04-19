@@ -1,14 +1,12 @@
 use std::{
-    fs::{File, OpenOptions},
     io::prelude::*,
     net::{TcpListener, TcpStream},
 };
 use chrono::Local;
-use server2::ThreadPool;
+use servers::{LogClient, ThreadPool};
 use sysinfo::System;
-use std::os::windows::fs::OpenOptionsExt;
-use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
+// Константы
 const REPEAT_FLAG: &str = "-r";
 
 
@@ -75,23 +73,38 @@ fn get_virtual_mem() -> Result<f64, ()> {
 
 fn main() {
 
-    let log_pipe = connect_log_server();
+    let mut log_client = LogClient::new("log_server_2".to_string());
 
-    let listener = TcpListener::bind("127.0.0.1:7979").unwrap();
-    let pool = ThreadPool::new(4);
+    let listener_res = TcpListener::bind("127.0.0.1:7979");
+    let listener: TcpListener;
+    match listener_res {
+        Ok(lis) => {
+            listener = lis;
+        },
+        Err(_) => {
+            println!("Кажется сервер уже запущен, порт занят!");
+            return;
+        },
+    }
 
+    let pool = ThreadPool::new(10);
+
+    let mut client_id = 0;
     for stream in listener.incoming() {
+        log_client.write_log(&format!("CONNECT {} CLIENT", client_id));
+        client_id += 1;
         let stream = stream.unwrap();
-        let cloned_pipe = log_pipe.try_clone().expect("Не удалось скопировать pipe");
+        let cloned_log_client = log_client.clone();
 
-        pool.execute(|| {
-            handle_connection(stream, cloned_pipe);
+
+        pool.execute(move || {
+            handle_connection(stream, cloned_log_client, client_id);
         });
     
     }
 }
 
-fn handle_connection(mut stream: TcpStream, mut pipe: File) {
+fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id: i32) {
 
     let mut phys_mem_str_cache = String::new();
     let mut virtual_mem_str_cache = String::new();
@@ -105,18 +118,19 @@ fn handle_connection(mut stream: TcpStream, mut pipe: File) {
                 bytes_read = bytes;
             },
             Err(_) => {
+                log_client.write_log(&format!("CLIENT {} DISCONNECT", client_id));
                 break;
             },
         };
         let req: String = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
-        let mut log_record = "Server 2 received: ".to_string() + req.as_str();
+        log_client.write_log(&format!("Server received from client {}: {}", client_id, req));
         // write_log(&mut pipe, &log_record);
         println!("Received: {}", req);
     
         let req_args: Vec<&str> = req.split(" ").collect();
 
         if req_args.len() < 1 {
-            send_response(&mut stream, &"invalid request".to_string()).unwrap();
+            send_response(&mut stream, &"invalid request".to_string());
             continue;
         }
         // ищем флаги
@@ -132,23 +146,17 @@ fn handle_connection(mut stream: TcpStream, mut pipe: File) {
                     let phys_mem_str: String = phys_mem.to_string().chars().take(5).collect();
                     if phys_mem_str != phys_mem_str_cache {
                         phys_mem_str_cache = phys_mem_str.clone();
-                        send_response(&mut stream, &phys_mem_str).expect("ошибка записи в сокет");
-                        log_record += "Server responded: ";
-                        log_record += phys_mem_str.as_str();
-                        write_log(&mut pipe,&log_record);
+                        log_client.write_log(&format!("Server responded client {}: {}", client_id, phys_mem_str));
                     } else {
-                        send_response(&mut stream, &"null".to_string()).expect("ошибка записи в сокет");
-                        log_record += "Server responded: null";
-                        write_log(&mut pipe,&log_record);
+                        send_response(&mut stream, &"null".to_string());
+                        log_client.write_log(&format!("Server responded client {}: null", client_id));
                     }
                 } else {
                     let phys_mem = get_phys_mem().expect("ошибка физической памяти");
                     let phys_mem_str: String = phys_mem.to_string().chars().take(5).collect();
                     phys_mem_str_cache = phys_mem_str.clone();
-                    send_response(&mut stream, &phys_mem_str).expect("ошибка записи в сокет");
-                    log_record += "Server responded: ";
-                    log_record += phys_mem_str.as_str();
-                    write_log(&mut pipe,&log_record);
+                    send_response(&mut stream, &phys_mem_str);
+                    log_client.write_log(&format!("Server responded client {}: {}", client_id, phys_mem_str));
                 }
             },
             "4" => {
@@ -157,29 +165,23 @@ fn handle_connection(mut stream: TcpStream, mut pipe: File) {
                     let virtual_mem_str: String = virtual_mem.to_string().chars().take(5).collect();
                     if virtual_mem_str != virtual_mem_str_cache {
                         virtual_mem_str_cache = virtual_mem_str.clone();
-                        send_response(&mut stream, &virtual_mem_str).expect("ошибка записи в сокет");
-                        log_record += "Server responded: ";
-                        log_record += virtual_mem_str.as_str();
-                        write_log(&mut pipe,&log_record);
+                        send_response(&mut stream, &virtual_mem_str);
+                        log_client.write_log(&format!("Server responded client {}: {}", client_id, virtual_mem_str));
                     } else {
-                        send_response(&mut stream, &"null".to_string()).expect("ошибка записи в сокет");
-                        log_record += "Server responded: null";
-                        write_log(&mut pipe,&log_record);
+                        send_response(&mut stream, &"null".to_string());
+                        log_client.write_log(&format!("Server responded client {}: null", client_id));
                     }
                 } else {
                     let virtual_mem = get_virtual_mem().expect("ошибка виртуальной памяти");
                     let virtual_mem_str: String = virtual_mem.to_string().chars().take(5).collect();
                     virtual_mem_str_cache = virtual_mem_str.clone();
-                    send_response(&mut stream, &virtual_mem_str).unwrap();
-                    log_record += "Server responded: ";
-                    log_record += virtual_mem_str.as_str();
-                    write_log(&mut pipe,&log_record);
+                    send_response(&mut stream, &virtual_mem_str);
+                    log_client.write_log(&format!("Server responded client {}: {}", client_id, virtual_mem_str));
                 }
             },
             _ => {
-                send_response(&mut stream, &"not found".to_string()).unwrap();
-                log_record += "Server responded: not found";
-                write_log(&mut pipe, &log_record);
+                send_response(&mut stream, &"not found".to_string());
+                log_client.write_log(&format!("Server responded client {}: not found", client_id));
             }
         }
 
@@ -189,39 +191,7 @@ fn handle_connection(mut stream: TcpStream, mut pipe: File) {
     }    
 }
 
-fn connect_log_server() -> File {
-    let mut pipe: File;
-    loop {
-        let pipe_name = r"\\.\pipe\log_server_2";
-        let pipe_res = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .custom_flags(FILE_FLAG_OVERLAPPED)
-            .open(pipe_name);
-        match pipe_res {
-            Ok(p) => {
-                pipe = p;
-                break; 
-            },
-            Err(_) => {},
-        }
-        println!("Ожидается включение лог сервера!");
-        std::thread::sleep(std::time::Duration::from_millis(1000));
-        
-    }
-    pipe.write_all(b"SERVER IS ON").unwrap();
-    println!("Соединение с лог сервером установлено!");
-    return pipe;
-}
-
-fn write_log(pipe: &mut File, data: &String) {
-    pipe.write_all(data.as_bytes()).expect("Не удалось записать лог");
-}
-
-fn send_response(stream: &mut TcpStream, response: &String) -> std::io::Result<()> {
-
+fn send_response(stream: &mut TcpStream, response: &String) {
     let response_with_time = format!("{} {}", Local::now().format("%d.%m.%Y %T"), response);
-    stream.write_all(response_with_time.as_bytes())?;
-
-    Ok(())
+    let _write_res = stream.write_all(response_with_time.as_bytes());
 }

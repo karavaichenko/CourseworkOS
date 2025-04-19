@@ -1,10 +1,19 @@
 [package]
-name = "server1"
+name = "servers"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "server1"
+path = "src/main1.rs"
+
+[[bin]]
+name = "server2"
+path = "src/main2.rs"
+
 [dependencies]
 chrono = "0.4"
+sysinfo = "0.34.2"
 
 
 [target. 'cfg(windows)'.dependencies]

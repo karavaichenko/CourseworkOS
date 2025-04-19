@@ -19,7 +19,6 @@ fn main() -> std::io::Result<()> {
         .write(true)     // Разрешаем запись
         .open("./logs_server/log1.txt").expect("Невозможно открыть файл");
 
-    let (pipe_stream1, _pipe1) = create_pipe("log_server_1").expect("Не удалось создать канал");
     
     // Файл логов и канал для второго сервера
     let log_file2 = OpenOptions::new()
@@ -28,11 +27,10 @@ fn main() -> std::io::Result<()> {
         .write(true)     // Разрешаем запись
         .open("./logs_server/log2.txt").expect("Невозможно открыть файл");
 
-    let (pipe_stream2, _pipe2) = create_pipe("log_server_2").expect("Не удалось создать канал");
     
     // Создаём 2 потока для обоаботки логов
-    let thread1 = thread::spawn(move || log_writer(pipe_stream1, log_file1));
-    let thread2 = thread::spawn(move || log_writer(pipe_stream2, log_file2));
+    let thread1 = thread::spawn(move || log_writer("log_server_1", log_file1));
+    let thread2 = thread::spawn(move || log_writer("log_server_2", log_file2));
 
     let _ = thread1.join();
     let _ = thread2.join();
@@ -82,7 +80,10 @@ fn _close_pipe(pipe: *mut c_void) {
     }
 }
 
-fn log_writer(mut pipe_stream: File, mut log_file: File) -> Result<(), io::Error> {
+fn log_writer(pipe_name: &str, mut log_file: File) -> Result<(), io::Error> {
+
+    let (mut pipe_stream, _pipe) = create_pipe(pipe_name).expect("Не удалось создать канал");
+
     let mut buf = [0u8; 1024];
 
     loop {
@@ -96,7 +97,9 @@ fn log_writer(mut pipe_stream: File, mut log_file: File) -> Result<(), io::Error
         }
 
         // тут будем писать в лог файл всю эту чепуху
-        write_log(&mut log_file, response);
+        if response.trim() != "" {
+            write_log(&mut log_file, response.trim().to_string());
+        }
     }
     // Ok(())
 }
