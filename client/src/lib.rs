@@ -53,7 +53,7 @@ impl Client {
         let mut buffer = [0; 1024];
         let bytes_read = stream.read(&mut buffer).expect("Не удалось прочитать из сокета");
         let response = String::from_utf8_lossy(&buffer[..bytes_read]);
-    
+        
         return Some(response.into_owned());
     }
 

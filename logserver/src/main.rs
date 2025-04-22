@@ -57,7 +57,7 @@ fn create_pipe(name: &str) -> Result<(File, *mut c_void), std::io::Error> {
             return Err(std::io::Error::last_os_error());
         }
 
-        println!("Сервер: канал создан. Ожидание клиента...");
+        println!("Канал создан. Ожидание клиента...");
         
         // Ожидаем подключения клиента
         let connected = winapi::um::namedpipeapi::ConnectNamedPipe(pipe, std::ptr::null_mut());
@@ -66,8 +66,6 @@ fn create_pipe(name: &str) -> Result<(File, *mut c_void), std::io::Error> {
             winapi::um::handleapi::CloseHandle(pipe);
             return Err(err);
         }
-
-        println!("Сервер: клиент подключен!");
         
         let pipe_stream = std::fs::File::from_raw_handle(pipe as _);
         return Result::Ok((pipe_stream, pipe));
@@ -93,17 +91,12 @@ fn log_writer(pipe_name: &str, mut log_file: File) -> Result<(), io::Error> {
 
         let response: String = String::from_utf8_lossy(&buf[..bytes_read]).into_owned();
         if bytes_read != 0 {
-            println!("\n{}", response);
-        }
-
-        // тут будем писать в лог файл всю эту чепуху
-        if response.trim() != "" {
             write_log(&mut log_file, response.trim().to_string());
         }
     }
-    // Ok(())
 }
 
 fn write_log(log_file: &mut File, response: String) {
     write!(log_file, "\n{} {}", Local::now().format("%d.%m.%Y %T"), response).unwrap();
+    println!("{} {}", Local::now().format("%d.%m.%Y %T"), response);
 }

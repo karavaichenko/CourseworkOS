@@ -99,8 +99,6 @@ fn hide_console(time: i32) {
 
 fn main() {
 
-    let mut log_client = LogClient::new("log_server_1".to_string());
-
     let listener_res = TcpListener::bind("127.0.0.1:7878");
     let listener: TcpListener;
     match listener_res {
@@ -112,13 +110,16 @@ fn main() {
             return;
         },
     }
+
+    // Подключение к лог серверу
+    let mut log_client = LogClient::new("log_server_1".to_string());
     
     let pool = ThreadPool::new(10);
     
     let mut client_id = 0;
     for stream in listener.incoming() {
-        log_client.write_log(&format!("CONNECT {} CLIENT", client_id));
         client_id += 1;
+        log_client.write_log(&format!("CONNECT {} CLIENT", client_id));
         let stream = stream.unwrap();
         let cloned_log_client = log_client.clone();
 
@@ -150,7 +151,6 @@ fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id
 
         let req: String = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
         log_client.write_log(&format!("Server received from client {}: {}", client_id, req));
-        println!("Received: {}", req);
     
         let req_args: Vec<&str> = req.split(" ").collect();
 
@@ -171,14 +171,15 @@ fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id
                     let gpu_name = get_gpu_name().expect("Ошибка получения GPU").expect("Gpu не найден");
                     if gpu_name != gpu_name_cache {
                         gpu_name_cache = gpu_name.clone();
-                        print!("{}", gpu_name);   
                         send_response(&mut stream, &gpu_name);
                         log_client.write_log(&format!("Server responded client {}: {}", client_id, gpu_name));
+                    } else {
+                        send_response(&mut stream, &"null".to_string());
+                        log_client.write_log(&format!("Server responded client {}: null", client_id));
                     }
                 } else {
                     let gpu_name = get_gpu_name().expect("Ошибка получения GPU").expect("Gpu не найден");
                     gpu_name_cache = gpu_name.clone();
-                    print!("{}", gpu_name);
                     send_response(&mut stream, &gpu_name);
                     log_client.write_log(&format!("Server responded client {}: {}", client_id, gpu_name));
                 }
@@ -211,7 +212,6 @@ fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id
                 }
             },
             _ => {
-                println!("{}", arg1);
                 send_response(&mut stream, &"not found".to_string());
                 log_client.write_log(&format!("Server responded client {}: not found", client_id));
             }

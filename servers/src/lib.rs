@@ -1,6 +1,8 @@
 use std::{fs::{File, OpenOptions}, io::Write, os::windows::fs::OpenOptionsExt, sync::*, thread};
 use winapi::um::winbase::FILE_FLAG_OVERLAPPED;
 
+
+// Многопоточный сервер
 pub struct ThreadPool {
     workers: Vec<Worker>,
     sender: Option<mpsc::Sender<Job>>,
@@ -82,6 +84,7 @@ impl Worker {
     }
 }
 
+// Клиент для подключенния к лог серверу
 pub struct LogClient {
     pipe: Option<File>
 }
@@ -119,6 +122,7 @@ impl LogClient {
     } 
 
     pub fn write_log(&mut self, data: &String) {
+        println!("{}", data.trim());
         if self.pipe.is_some() {
             let write_res = self.pipe.as_ref().unwrap().write_all(data.as_bytes());
             if write_res.is_err() {
@@ -138,3 +142,4 @@ impl Clone for LogClient {
         }
     }
 }
+

@@ -73,8 +73,6 @@ fn get_virtual_mem() -> Result<f64, ()> {
 
 fn main() {
 
-    let mut log_client = LogClient::new("log_server_2".to_string());
-
     let listener_res = TcpListener::bind("127.0.0.1:7979");
     let listener: TcpListener;
     match listener_res {
@@ -87,12 +85,15 @@ fn main() {
         },
     }
 
+    // Подключение к лог северу
+    let mut log_client = LogClient::new("log_server_2".to_string());
+
     let pool = ThreadPool::new(10);
 
     let mut client_id = 0;
     for stream in listener.incoming() {
-        log_client.write_log(&format!("CONNECT {} CLIENT", client_id));
         client_id += 1;
+        log_client.write_log(&format!("CONNECT {} CLIENT", client_id));
         let stream = stream.unwrap();
         let cloned_log_client = log_client.clone();
 
@@ -124,8 +125,6 @@ fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id
         };
         let req: String = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
         log_client.write_log(&format!("Server received from client {}: {}", client_id, req));
-        // write_log(&mut pipe, &log_record);
-        println!("Received: {}", req);
     
         let req_args: Vec<&str> = req.split(" ").collect();
 
@@ -146,6 +145,7 @@ fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id
                     let phys_mem_str: String = phys_mem.to_string().chars().take(5).collect();
                     if phys_mem_str != phys_mem_str_cache {
                         phys_mem_str_cache = phys_mem_str.clone();
+                        send_response(&mut stream, &phys_mem_str);
                         log_client.write_log(&format!("Server responded client {}: {}", client_id, phys_mem_str));
                     } else {
                         send_response(&mut stream, &"null".to_string());
@@ -193,5 +193,5 @@ fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id
 
 fn send_response(stream: &mut TcpStream, response: &String) {
     let response_with_time = format!("{} {}", Local::now().format("%d.%m.%Y %T"), response);
-    let _write_res = stream.write_all(response_with_time.as_bytes());
+    let _write_res = stream.write_all(response_with_time.as_bytes()).unwrap();
 }
