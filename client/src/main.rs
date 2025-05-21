@@ -2,8 +2,6 @@ use std::io::{self};
 use std::env;
 use client::Client;
 
-
-
 fn main() -> io::Result<()> {
 
     let server1_addr = env::var("SERVER1_ADDRESS").unwrap_or_else(|_| "127.0.0.1:7878".to_string());

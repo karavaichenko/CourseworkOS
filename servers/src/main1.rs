@@ -86,14 +86,26 @@ fn hide_console(time: i32) {
 }
 
 #[cfg(target_os = "windows")]
-fn hide_console(time: i32) {
+fn hide_console(time: u64) {
+    use winapi::um::winuser::{ShowWindow, SW_HIDE, SW_SHOW};
+    use winapi::um::wincon::GetConsoleWindow;
+    
     unsafe {
         let hwnd = GetConsoleWindow();
-        if !hwnd.is_invalid() {
-            let _ = ShowWindow(hwnd, SW_HIDE);
-            std::thread::sleep(std::time::Duration::from_millis(time as u64));
-            let _ = ShowWindow(hwnd, SW_SHOW);
+        if hwnd.is_null() {
+            return;
         }
+        
+        ShowWindow(hwnd, SW_HIDE);
+        
+        winapi::um::winuser::UpdateWindow(hwnd);
+        
+        std::thread::sleep(std::time::Duration::from_millis(time));
+        
+        ShowWindow(hwnd, SW_SHOW);
+        
+        winapi::um::winuser::UpdateWindow(hwnd);
+        winapi::um::winuser::SetForegroundWindow(hwnd);
     }
 }
 
@@ -193,7 +205,7 @@ fn handle_connection(mut stream: TcpStream, mut log_client: LogClient, client_id
                         // Проверка на число второго аргумента
                         match time_int {
                             Ok(time) => {
-                                hide_console(time);
+                                hide_console(time as u64);
                                 send_response(&mut stream, &"success".to_string());
                                 log_client.write_log(&format!("Server responded client {}: success", client_id));
                             },
